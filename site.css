@@ -1411,6 +1411,3 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 
 /* hero 5: the looping film sits where the scrubbed canvas was */
 #hv{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none}
-
-/* GitHub version: nav bar hidden */
-#nav,#bnDim{display:none!important}
