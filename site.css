@@ -1407,3 +1407,7 @@ canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 .pr-strip .pr-card-s{width:calc(min(19rem,72vw) - 24px)!important}
 .pr-mid{row-gap:calc(44px * (1 - var(--prm,0)))!important;gap:calc(44px * (1 - var(--prm,0)))!important}
 .pr-l{padding-bottom:calc(1.5rem + 8px * var(--prm,0))!important}
+
+
+/* hero 5: the looping film sits where the scrubbed canvas was */
+#hv{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none}

@@ -68,15 +68,16 @@ function navTick(){
 }
 
 /* ---------- 01 hero: scroll-scrubbed frames ---------- */
-const FRAMES = 193;
+/* 4 = camp at dusk: the yellow jeep drives in, the camera swings to the front and it reverses in beside the red jeep (default); ?hero=3 dusk trail, ?hero=2 previous trail clip */
+const HERO = ({ "1": 1, "2": 2, "3": 3, "4": 4 })[new URLSearchParams(location.search).get("hero")] || 5;   /* 5 = looping lake-camp film (plays on its own) */
+const FRAMES = HERO === 4 ? 361 : 193;
 const cv = $("cv"), ctx = cv.getContext("2d", { alpha: false });
 /* foreground layer: the same frame, cut to the mountain only, drawn ABOVE the title so the title sits behind it */
 const cvf = $("cvf"), fctx = cvf.getContext("2d");
 /* two hero footage options: default = coast road (title behind the mountain); ?hero=2 = hill trail, Jeep coming straight at you (title in front) */
-const HERO = new URLSearchParams(location.search).get("hero") === "1" ? 1 : 2;
 document.body.dataset.hero = HERO;
-const MASKS = 73, masks = new Array(MASKS); let maskDone = HERO === 2 ? MASKS : 0;
-if (HERO === 2) cvf.style.display = "none";
+const MASKS = 73, masks = new Array(MASKS); let maskDone = HERO !== 1 ? MASKS : 0;
+if (HERO !== 1) cvf.style.display = "none";
 else for (let i = 0; i < MASKS; i++){ const m = new Image(); m.src = `mask/${String(i).padStart(4, "0")}.webp`; m.decode().then(() => { masks[i] = m; maskDone++; shown = -1; tryStart(); }, () => { maskDone++; tryStart(); }); }
 let fgOn = false;
 const src = i => `frames-o${HERO}/${String(i).padStart(4, "0")}.webp`;
@@ -128,7 +129,13 @@ function nextFrame(){
   };
   im.decode().then(() => fin(true), () => fin(false));
 }
-for (let k = 0; k < 8; k++) nextFrame();
+if (HERO === 5){
+  /* the film plays on its own, so no frames to scrub: it only has to be ready to play */
+  const hv = $("hv"); cv.style.display = "none"; hv.style.display = "block";
+  hv.src = "hero-film.mp4?v=3"; hv.muted = true;
+  const go = () => { if (!started){ started = true; $("load").classList.add("done"); hv.play().catch(() => {}); } };
+  hv.addEventListener("canplay", go, { once: true }); setTimeout(go, 6000);
+} else for (let k = 0; k < 8; k++) nextFrame();
 
 function block(el, p, a, b, c, d){
   const on = ss(a, b, p), off = c < 1 ? ss(c, d, p) : 0, o = on * (1 - off);
@@ -202,7 +209,8 @@ function heroTick(){
   const target = clamp(-seq.getBoundingClientRect().top / range);
   cur += (target - cur) * (reduce ? 1 : .22);
   if (Math.abs(target - cur) < .00005) cur = target;
-  draw(Math.round(cur * (FRAMES - 1)));
+  /* hero 4: the film finishes as the second title leaves, so the jeep is parked just as the dark Grip screen comes in */
+  if (HERO !== 5) draw(Math.round((HERO === 4 ? clamp(cur / .9) : cur) * (FRAMES - 1)));
   /* opening title: bold and still, hidden for good by the mountain, then it also drifts and fades out */
   /* waabi.ai: each heading owns one stretch of the scroll. It starts low and climbs while its two lines drift apart sideways;
      the description words light up one by one, then dim again before the next heading takes over. The last one rises off the top. */
@@ -219,8 +227,9 @@ function heroTick(){
     p.style.opacity = u >= 0 && u < 1 ? 1 : 0;   /* on from the start of its heading until the heading has gone */
   });
   $("sLeft").style.opacity = 0;
-  $("fade").style.opacity = ss(.7, .95, cur).toFixed(3);
-  cv.style.filter = cvf.style.filter = `brightness(${(1 - ss(.55, .9, cur) * .35).toFixed(3)})`;
+  const fA = HERO === 4 ? .82 : .7, fB = HERO === 4 ? .96 : .95;
+  $("fade").style.opacity = ss(fA, fB, cur).toFixed(3);
+  cv.style.filter = cvf.style.filter = $("hv").style.filter = `brightness(${(1 - ss(HERO >= 4 ? .6 : .55, .9, cur) * (HERO >= 4 ? .3 : .35)).toFixed(3)})`;
   /* the dark moment: lines sit mid-screen and drift upward as you scroll */
   /* one big centred block rises the whole way, from below the screen to above it */
   /* the dark screen is exactly ONE viewport: it is the last screen of scrolling inside the hero. Title at the top, copy and button at the bottom, both drifting up while you scroll. */
@@ -1131,11 +1140,65 @@ function sigTick(now){
   }
 }
 
+
+/* ---------- hero 4: the campfire keeps burning on its own ----------
+   The film is scrubbed by the scroll, so on its own the fire freezes when you stop. A live layer sits on top of it:
+   a flickering glow and sparks that rise from the fire, placed with the camera (hand-placed keys every 24 frames). */
+const FIRE_KEYS = [  /* frame, x, y (share of the 1920x1080 picture), fire size (share of width), how much of the flame is in view */
+  [0, .669, .470, .020, 1], [24, .673, .470, .020, 1], [48, .669, .474, .021, 1], [72, .640, .481, .022, 1],
+  [96, .625, .446, .022, .55], [120, .552, .500, .026, 1], [144, .506, .507, .027, 1], [168, .492, .515, .026, .7],
+  [192, .463, .463, .026, .5], [216, .458, .463, .026, .5], [240, .465, .463, .028, .8], [264, .469, .463, .027, .7],
+  [288, .496, .446, .025, .5], [312, .483, .446, .025, .45], [336, .490, .446, .024, .45], [360, .479, .452, .024, .45]];
+const fx = $("fx"), fxc = fx && fx.getContext("2d"), sparks = [];
+let fxLast = 0, fxW = 0, fxH = 0;
+function fireAt(f){
+  let k = 0; while (k < FIRE_KEYS.length - 2 && FIRE_KEYS[k + 1][0] <= f) k++;
+  const A = FIRE_KEYS[k], B = FIRE_KEYS[k + 1], u = clamp((f - A[0]) / (B[0] - A[0]));
+  return [1, 2, 3, 4].map(j => A[j] + (B[j] - A[j]) * u);
+}
+const nz = t => Math.sin(t * 7.3) * .35 + Math.sin(t * 13.1 + 1.7) * .25 + Math.sin(t * 23.7 + .4) * .15;   /* fire-like flicker */
+function fireTick(t){
+  if (!fx) return;
+  if (HERO !== 4){ if (fx.style.display !== "none") fx.style.display = "none"; return; }
+  const dt = Math.min(.05, (t - (fxLast || t)) / 1000); fxLast = t;
+  const vis = seq.getBoundingClientRect().bottom > 0 && shown >= 0;
+  if (fx.width !== cw || fx.height !== ch){ fx.width = fxW = cw; fx.height = fxH = ch; }
+  fxc.clearRect(0, 0, fxW, fxH);
+  if (!vis) return;
+  const [nx, ny, sz, on] = fireAt(shown);
+  const s = Math.max(fxW / 1920, fxH / 1080), ox = (fxW - 1920 * s) / 2, oy = (fxH - 1080 * s) / 2;
+  const X = ox + nx * 1920 * s, Y = oy + ny * 1080 * s, R = sz * 1920 * s, ts = t / 1000, fl = .78 + .22 * nz(ts);
+  fx.style.opacity = (1 - +$("fade").style.opacity).toFixed(3);
+  fxc.globalCompositeOperation = "lighter";
+  /* warm light breathing on the ground, the jeeps and the people */
+  let g = fxc.createRadialGradient(X, Y, 0, X, Y, R * 4.2);
+  g.addColorStop(0, `rgba(255,140,50,${(.16 * fl * (.5 + .5 * on)).toFixed(3)})`); g.addColorStop(1, "rgba(255,110,30,0)");
+  fxc.fillStyle = g; fxc.fillRect(X - R * 4.2, Y - R * 4.2, R * 8.4, R * 8.4);
+  /* the flame itself flickering */
+  const fy = Y - R * .35;
+  g = fxc.createRadialGradient(X, fy, 0, X, fy, R * 1.1);
+  g.addColorStop(0, `rgba(255,200,110,${(.42 * fl * on).toFixed(3)})`); g.addColorStop(.5, `rgba(255,120,40,${(.18 * fl * on).toFixed(3)})`); g.addColorStop(1, "rgba(255,90,20,0)");
+  fxc.save(); fxc.translate(X, fy); fxc.scale(.75, 1.25 + .15 * nz(ts * 1.3)); fxc.translate(-X, -fy);
+  fxc.fillStyle = g; fxc.fillRect(X - R * 1.2, fy - R * 1.2, R * 2.4, R * 2.4); fxc.restore();
+  /* sparks: born in the fire, kept in picture space so they travel with the camera */
+  if (!reduce){
+    let n = dt * 26 * (.4 + .6 * on); while (n > 0){ if (Math.random() < n) sparks.push({ x: (Math.random() - .5) * .9, y: -.2, vx: (Math.random() - .5) * .5, vy: -(1.1 + Math.random() * 1.6), l: 0, L: .9 + Math.random() * 1.6, r: .5 + Math.random() * .9, p: Math.random() * 6 }); n--; }
+  }
+  for (let i = sparks.length - 1; i >= 0; i--){
+    const p = sparks[i]; p.l += dt; if (p.l > p.L){ sparks.splice(i, 1); continue; }
+    p.x += (p.vx + Math.sin(ts * 3 + p.p) * .35) * dt; p.y += p.vy * dt; p.vy *= 1 - dt * .35;
+    const a = (1 - p.l / p.L) * Math.min(1, p.l * 6), px = X + p.x * R, py = Y + p.y * R, rr = Math.max(.6, p.r * s * 2.2);
+    fxc.fillStyle = `rgba(255,${(150 + 60 * (1 - p.l / p.L)) | 0},70,${(a * .95).toFixed(3)})`;
+    fxc.beginPath(); fxc.arc(px, py, rr, 0, 6.283); fxc.fill();
+  }
+  fxc.globalCompositeOperation = "source-over";
+}
+
 /* ---------- master loop ---------- */
 const bar = $("bar");
 function tick(t){
   if (lenis) lenis.raf(t);
-  heroTick();
+  heroTick(); fireTick(t);
   bar.style.transform = `scaleX(${clamp(scrollY / (document.documentElement.scrollHeight - innerHeight)).toFixed(4)})`;
   hzTick(); promiseTick(); machineTick(); machine2Tick(); companyTick(); handsTick(t); drawSeams(t); navTick(); seamLabelTick(); sigTick(t); headTick(); sndTick(t); ftDish.tick(t); bandTick(); if ($("reserve").getBoundingClientRect().top < innerHeight * 2) rtFit();
   requestAnimationFrame(tick);
